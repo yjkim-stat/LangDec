@@ -66,7 +66,7 @@ class LlamaGenerator(BaseGenerator):
             torch_dtype=torch.float16, 
             trust_remote_code=True, 
             quantization_config=BitsAndBytesConfig(**quantization_config), 
-            cache_dir=os.getenv('CACHE_DIR'),
+            cache_dir=os.getenv('CACHE_DIR', './'),
             attn_implementation=os.getenv('ATTN_IMPLEMENTATION', "flash_attention_2"),
             token=os.getenv('HF_TOKEN'),
             )
