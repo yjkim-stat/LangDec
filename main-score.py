@@ -244,7 +244,7 @@ def evaluate_method_single(llm, prm, core_method, results_dir="experiments-mmlup
                                 else:
                                     raise KeyError()
 
-                                weights[parsed] += aggregate(step_scores[i], method=aggregation)
+                                weights[parsed] += aggregate(step_scores[i][0], method=aggregation)
                             pred = max(weights, key=weights.get)
                         else:
                             raise ValueError(f"Unsupported selection method: {selection}")
@@ -326,7 +326,8 @@ if __name__ == '__main__':
     }
 
     method_cfgs_chain = [
-        ('chain', "SC_L10", 'min'), 
+        # ('chain', "SC_N10", 'min'), 
+        ('chain', os.getenv("EXP_NAME"), 'min'), 
     ]
     
     if os.environ.get('GDRIVE_DIR', False):
