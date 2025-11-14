@@ -130,6 +130,8 @@ def save_config_and_prepare_dir(args):
         pretty_dataset = 'math500'
     elif args.dataset == 'TIGER-Lab/MMLU-Pro':
         pretty_dataset = 'mmlupro'
+    elif args.dataset == 'amphora/MCLM':
+        pretty_dataset = 'MT-MATH100'
     else:
         raise KeyError()
 
@@ -191,6 +193,9 @@ if __name__ == '__main__':
         assert '-' in args.dataset
         dataset = load_dataset('cais/mmlu', args.dataset.split('-')[-1], cache_dir=os.getenv('CACHE_DIR'))
         test_dataset = dataset['test']
+    elif args.dataset == 'amphora/MCLM':
+        dataset = load_dataset(args.dataset, 'MT-MATH100')
+        test_dataset = dataset['test']   
     else:
         raise KeyError()
 
@@ -273,6 +278,12 @@ if __name__ == '__main__':
             formatted_query = f"{test_query}\n"
             for i, choice in enumerate(options):
                 formatted_query += f"{i}. {choice}\n"
+        elif args.dataset == 'amphora/MCLM':
+            qid = test_idx
+
+            # query 만들기question
+            test_query = test_sample["en"]
+            formatted_query = f"{test_query}"
         else:
             raise KeyError()
 
