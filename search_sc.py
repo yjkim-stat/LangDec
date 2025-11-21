@@ -74,61 +74,76 @@ class SelfConsistencySearch:
         responses = [r.replace("\n\n## Step", f"{score_tok}## Step") for r in responses]
         return self.prm(responses, prm_state, return_all_steps=self.return_all_steps)
 
+    # def _update_temperature(self):
+    #     if self.temp_update_rule is None:
+    #         return None
+    #     else:
+    #         # TODO
+    #         # self.generator.temperature = ...
+    #         raise NotImplementedError()
+        
+
     def _update_temperature(self):
         """
-        Math100용 공격적인 쿨링 스케줄:
-        - 각 question마다 __call__ 초반에 저장한 _base_temperature를 기준으로
-          trial이 진행될수록 온도를 빠르게 낮춘다.
-        - 초기엔 base_T에서 시작하고, 후반부에 가까워질수록
-          대략 0.35 * base_T 수준까지 강하게 식힌다.
-        - PRM 점수나 답의 다양성은 사용하지 않고,
-          오로지 trial 진행 정도(progress)에만 의존한다.
+        Math100용 온도 스케줄:
+        - 질문 하나 안에서 trial이 진행될수록: 탐색 → 활용 쪽으로 점진적으로 온도 감소
+        - 최근 PRM aggregate score가 개선되면: 온도 살짝 낮춰서 더 '집중'
+        - 최근 score가 악화되면: 온도 살짝 올려서 '다른 해법' 탐색
         """
         import math
 
-        # generator에 temperature가 없으면 아무 것도 하지 않음
+        # generator에 temperature가 없으면 아무 것도 안 함
         if not hasattr(self.generator, "temperature"):
             return None
 
-        # __call__에서 한 번 저장해둔 기준 온도 (없으면 현재 온도 사용)
+        # __call__ 초반에 세팅해둔 기준 온도 (없으면 현재 온도 사용)
         base_T = float(getattr(self, "_base_temperature", float(self.generator.temperature)))
 
-        # max_trials 정보가 없거나 1 이하이면 그냥 base_T 유지
+        # trial 진행 비율 (0.0 ~ 1.0)
+        # self.trials: 지금까지 시도한 횟수 (현재 trial 포함하도록 설계되어 있음)
         if self.max_trials is None or self.max_trials <= 1:
-            self.generator.temperature = base_T
-            return base_T
+            progress = 0.0
+        else:
+            progress = max(0.0, min(1.0, self.trials / float(self.max_trials - 1)))
 
-        # self.trials 는 for 루프 안에서:
-        #   - _update_temperature() 호출 시점: 0, 1, 2, ... (0-based 인덱스 느낌)
-        #   - 최대값은 (max_trials - 2) 정도
-        step_idx = max(0, min(self.trials, self.max_trials - 1))
-        progress = step_idx / float(self.max_trials - 1)  # 0.0 ~ 1.0
+        # ── 1단계: 단순 스케줄 (초반엔 높은 온도, 후반으로 갈수록 낮은 온도)
+        # 예: base_T 기준으로 처음에는 1.4배, 마지막에는 0.7배 정도로 수렴
+        T_high = base_T * 1.4
+        T_low = base_T * 0.7
+        T_sched = (1.0 - progress) * T_high + progress * T_low
 
-        # ── 더욱 공격적인 쿨링 파라미터 ──
-        target_min_ratio = 0.35   # 마지막에는 base_T의 35% 근처까지 떨어뜨리기
-        alpha = 2.0               # alpha > 1 이면 초반부터 빠르게 식음 (front-loaded cooling)
+        # ── 2단계: 최근 PRM aggregate score 기반 미세조정
+        scores = getattr(self, "_agg_scores", [])
 
-        # ratio(progress):
-        #   progress = 0   → ratio = 1.0 (base_T)
-        #   progress ~ 0.5 → ratio ≈ 0.51 (이미 꽤 낮음)
-        #   progress → 1   → ratio = target_min_ratio (0.35)
-        ratio = target_min_ratio + (1.0 - target_min_ratio) * ((1.0 - progress) ** alpha)
+        T = T_sched
+        if len(scores) >= 2:
+            last_score = float(scores[-1])
+            best_prev = float(max(scores[:-1]))
 
-        T = base_T * ratio
+            # diff > 0 이면 지금이 이전 최고보다 좋아진 것, diff < 0이면 나빠진 것
+            diff = last_score - best_prev
 
-        # 안전 범위 클램프 (너무 극단적이지 않도록)
-        # 정확도에 올인하는 세팅이므로 상한은 1.0 정도로 두고,
-        # 하한은 0.15까지 허용
-        T = max(0.15, min(1.0, T))
+            # Math100 특성상 스코어 스케일이 너무 민감하지 않도록 작은 임계값 사용
+            tol = 0.02  # 필요하면 이 값만 조절해도 됨
+
+            if diff > tol:
+                # 최근 시도가 이전 최고보다 꽤 나아졌으면 -> 온도 약간 낮춰서 exploit
+                T *= math.exp(-0.15)
+            elif diff < -tol:
+                # 최근 시도가 이전보다 떨어졌으면 -> 온도 약간 올려서 explore
+                T *= math.exp(0.15)
+
+        # 안전 범위 클램프
+        T = max(0.2, min(1.8, T))
 
         # 실제 generator에 반영
         self.generator.temperature = float(T)
 
         logger.info(
-            f"[TempUpdate-Math100-AggressiveCooling] "
-            f"trials={self.trials}/{self.max_trials}, "
+            f"[TempUpdate-Math100] trials={self.trials}/{self.max_trials}, "
             f"base_T={base_T:.3f}, progress={progress:.2f}, "
-            f"ratio={ratio:.4f}, T={T:.3f}"
+            f"T_sched={T_sched:.3f}, final_T={T:.3f}, "
+            f"scores={scores[-3:] if len(scores) >= 3 else scores}"
         )
 
         return T
