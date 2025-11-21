@@ -294,7 +294,8 @@ if __name__ == '__main__':
 
     seed = 12389
 
-    dataset = os.environ.get('EVAL_DATASET', 'math500')
+    #dataset = os.environ.get('EVAL_DATASET', 'math500')
+    dataset = os.environ.get('EVAL_DATASET', 'math100')
 
     exp = 'BS'
 
