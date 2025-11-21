@@ -20,6 +20,7 @@ from general_prm import GeneralPRM
 from deepseek_prm import DeepseekPRM
 from llama_generator import LlamaGenerator
 from search_sc import SelfConsistencySearch
+from search_genetic import GeneticSearch
 
 # Create a logger object
 logger = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ parser.add_argument("--temp_ceil", type=float, default=1.2)
 parser.add_argument("--score_aggregation", type=str, default=None)
 parser.add_argument("--temp_update_rule", type=str, default=None)
 
+parser.add_argument("--metric", type=str, default='top1')
+parser.add_argument("--select_strategy", type=str, default='random')
 
 # PRM config
 parser.add_argument("--prm_model_name", type=str, default="UW-Madison-Lee-Lab/VersaPRM", help="Name of the model to use.")
@@ -252,6 +255,18 @@ if __name__ == '__main__':
             temp_update_rule=args.temp_update_rule,
             score_aggregation=args.score_aggregation,
         )
+    elif 'Genetic' in args.method:
+        search = GeneticSearch(
+            method=args.method,
+            generator = generator, 
+            prm = prm,
+            max_trials=args.max_trials,
+            temp_update_rule=args.temp_update_rule,
+            score_aggregation=args.score_aggregation,
+            metric=args.metric,
+            select_strategy=args.select_strategy,
+        )        
+        
     else:
         raise KeyError()
             
