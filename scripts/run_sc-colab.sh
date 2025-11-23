@@ -31,7 +31,7 @@ seed=1234
 dataset='HuggingFaceH4/MATH-500'
 
 start=0
-end=1
+end=98
 
 CUDA_VISIBLE_DEVICES=$CUDA_DEVICE_ID python LangDec/main.py \
     --seed $seed\
